@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>公文格式助手</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --primary-light: #dbeafe;
+            --success: #16a34a;
+            --success-light: #dcfce7;
+            --warning: #d97706;
+            --warning-light: #fef3c7;
+            --error: #dc2626;
+            --error-light: #fee2e2;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+            --radius: 12px;
+            --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.06);
+            --shadow-lg: 0 10px 15px rgba(0,0,0,0.1), 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            background: var(--gray-50);
+            color: var(--gray-800);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ── 顶部导航 ── */
+        .header {
+            background: white;
+            border-bottom: 1px solid var(--gray-200);
+            padding: 12px 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+            background: rgba(255,255,255,0.95);
+        }
+
+        .header-inner {
+            max-width: 800px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header-icon {
+            font-size: 24px;
+        }
+
+        .header-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+
+        .header-subtitle {
+            font-size: 12px;
+            color: var(--gray-500);
+            margin-left: auto;
+        }
+
+        /* ── 主内容 ── */
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px 16px 100px;
+        }
+
+        /* ── 拖放区域 ── */
+        .drop-zone {
+            border: 2px dashed var(--gray-300);
+            border-radius: var(--radius);
+            padding: 48px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: white;
+            position: relative;
+        }
+
+        .drop-zone:hover {
+            border-color: var(--primary);
+            background: var(--primary-light);
+        }
+
+        .drop-zone.dragover {
+            border-color: var(--primary);
+            background: var(--primary-light);
+            transform: scale(1.01);
+            box-shadow: var(--shadow-md);
+        }
+
+        .drop-zone.has-file {
+            border-color: var(--success);
+            background: var(--success-light);
+            border-style: solid;
+        }
+
+        .drop-zone-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .drop-zone-text {
+            font-size: 16px;
+            color: var(--gray-600);
+            font-weight: 500;
+        }
+
+        .drop-zone-hint {
+            font-size: 13px;
+            color: var(--gray-400);
+            margin-top: 8px;
+        }
+
+        .drop-zone input[type="file"] {
+            display: none;
+        }
+
+        /* ── 文件信息卡片 ── */
+        .file-info {
+            display: none;
+            background: white;
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-top: 16px;
+            box-shadow: var(--shadow);
+            align-items: center;
+            gap: 12px;
+        }
+
+        .file-info.visible {
+            display: flex;
+        }
+
+        .file-icon {
+            font-size: 32px;
+            flex-shrink: 0;
+        }
+
+        .file-details {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--gray-800);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .file-meta {
+            font-size: 12px;
+            color: var(--gray-500);
+            margin-top: 2px;
+        }
+
+        .file-remove {
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: var(--gray-400);
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 8px;
+            transition: all 0.15s;
+        }
+
+        .file-remove:hover {
+            background: var(--error-light);
+            color: var(--error);
+        }
+
+        /* ── 功能选项 ── */
+        .options {
+            display: none;
+            margin-top: 20px;
+            gap: 10px;
+        }
+
+        .options.visible {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        @media (max-width: 600px) {
+            .options.visible {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .option-card {
+            background: white;
+            border: 2px solid var(--gray-200);
+            border-radius: var(--radius);
+            padding: 20px 14px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .option-card:hover {
+            border-color: var(--primary);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+
+        .option-card.selected {
+            border-color: var(--primary);
+            background: var(--primary-light);
+        }
+
+        .option-icon {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .option-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--gray-800);
+        }
+
+        .option-desc {
+            font-size: 11px;
+            color: var(--gray-500);
+            margin-top: 4px;
+        }
+
+        /* ── 功能面板 ── */
+        .panel {
+            display: none;
+            margin-top: 20px;
+            background: white;
+            border-radius: var(--radius);
+            padding: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .panel.visible {
+            display: block;
+        }
+
+        .panel-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* ── 格式转换面板 ── */
+        .format-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+            gap: 8px;
+        }
+
+        .format-btn {
+            padding: 10px 8px;
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.15s;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--gray-700);
+        }
+
+        .format-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: var(--primary-light);
+        }
+
+        .format-btn.active {
+            border-color: var(--primary);
+            background: var(--primary);
+            color: white;
+        }
+
+        .format-btn .ext {
+            font-size: 16px;
+            font-weight: 700;
+            display: block;
+            text-transform: uppercase;
+        }
+
+        /* ── 图片尺寸面板 ── */
+        .size-inputs {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .size-field {
+            flex: 1;
+            min-width: 120px;
+        }
+
+        .size-field label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--gray-600);
+            margin-bottom: 4px;
+        }
+
+        .size-field input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--gray-300);
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.15s;
+        }
+
+        .size-field input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .size-field .hint {
+            font-size: 11px;
+            color: var(--gray-400);
+            margin-top: 4px;
+        }
+
+        .size-mode {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            text-align: center;
+            font-size: 12px;
+            color: var(--gray-600);
+            transition: all 0.15s;
+        }
+
+        .mode-btn.active {
+            border-color: var(--primary);
+            background: var(--primary-light);
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        /* ── 执行按钮 ── */
+        .action-btn {
+            display: none;
+            width: 100%;
+            padding: 14px;
+            margin-top: 20px;
+            border: none;
+            border-radius: var(--radius);
+            background: var(--primary);
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .action-btn.visible {
+            display: block;
+        }
+
+        .action-btn:hover {
+            background: var(--primary-hover);
+        }
+
+        .action-btn:disabled {
+            background: var(--gray-300);
+            cursor: not-allowed;
+        }
+
+        /* ── 结果区域 ── */
+        .result {
+            display: none;
+            margin-top: 20px;
+            background: white;
+            border-radius: var(--radius);
+            padding: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .result.visible {
+            display: block;
+        }
+
+        .result-success {
+            text-align: center;
+        }
+
+        .result-icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .result-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--success);
+        }
+
+        .result-desc {
+            font-size: 13px;
+            color: var(--gray-500);
+            margin-top: 4px;
+        }
+
+        .result-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn-download {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            background: var(--success);
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-download:hover {
+            background: #15803d;
+        }
+
+        .btn-reset {
+            padding: 10px 24px;
+            border: 1px solid var(--gray-300);
+            border-radius: 8px;
+            background: white;
+            color: var(--gray-600);
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-reset:hover {
+            border-color: var(--gray-400);
+        }
+
+        /* ── 置信度标记 ── */
+        .confidence-list {
+            margin-top: 16px;
+            text-align: left;
+        }
+
+        .confidence-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-bottom: 4px;
+            font-size: 13px;
+        }
+
+        .confidence-high {
+            background: var(--success-light);
+            color: var(--success);
+        }
+
+        .confidence-medium {
+            background: var(--warning-light);
+            color: var(--warning);
+        }
+
+        .confidence-low {
+            background: var(--error-light);
+            color: var(--error);
+        }
+
+        /* ── 加载状态 ── */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 32px 20px;
+        }
+
+        .loading.visible {
+            display: block;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--gray-200);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 12px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            font-size: 14px;
+            color: var(--gray-500);
+        }
+
+        /* ── 错误提示 ── */
+        .error-toast {
+            display: none;
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--gray-800);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 14px;
+            z-index: 1000;
+            max-width: 90vw;
+            text-align: center;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .error-toast.visible {
+            display: block;
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateX(-50%) translateY(20px); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
+
+        /* ── 页脚 ── */
+        .footer {
+            text-align: center;
+            padding: 20px;
+            font-size: 12px;
+            color: var(--gray-400);
+        }
+
+        /* ── 响应式微调 ── */
+        @media (max-width: 600px) {
+            .container {
+                padding: 16px 12px 80px;
+            }
+            .drop-zone {
+                padding: 36px 16px;
+            }
+            .drop-zone-icon {
+                font-size: 36px;
+            }
+            .drop-zone-text {
+                font-size: 15px;
+            }
+            .size-inputs {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <header class="header">
+        <div class="header-inner">
+            <span class="header-icon">📄</span>
+            <span class="header-title">公文格式助手</span>
+            <span class="header-subtitle">GB/T 9704-2012</span>
+        </div>
+    </header>
+
+    <!-- 主内容 -->
+    <div class="container">
+        <!-- 拖放区域 -->
+        <div class="drop-zone" id="dropZone">
+            <div class="drop-zone-icon">📂</div>
+            <div class="drop-zone-text">拖动文件到此处</div>
+            <div class="drop-zone-hint">或点击选择文件 · 支持 docx、pdf、pptx、xlsx 等</div>
+            <input type="file" id="fileInput"
+                   accept=".docx,.doc,.pdf,.pptx,.ppt,.xlsx,.xls,.odt,.ods,.odp,.rtf,.txt,.csv,.html">
+        </div>
+
+        <!-- 文件信息 -->
+        <div class="file-info" id="fileInfo">
+            <span class="file-icon" id="fileIcon">📄</span>
+            <div class="file-details">
+                <div class="file-name" id="fileName"></div>
+                <div class="file-meta" id="fileMeta"></div>
+            </div>
+            <button class="file-remove" id="fileRemove" title="移除文件">✕</button>
+        </div>
+
+        <!-- 功能选项 -->
+        <div class="options" id="options">
+            <div class="option-card" data-option="convert" id="optConvert">
+                <div class="option-icon">🔄</div>
+                <div class="option-title">文件格式转换</div>
+                <div class="option-desc">PDF/Word/PPT/Excel 互转</div>
+            </div>
+            <div class="option-card" data-option="format" id="optFormat">
+                <div class="option-icon">📝</div>
+                <div class="option-title">字体格式修改</div>
+                <div class="option-desc">公文自动排版</div>
+            </div>
+            <div class="option-card" data-option="resize" id="optResize">
+                <div class="option-icon">🖼️</div>
+                <div class="option-title">图片尺寸统一</div>
+                <div class="option-desc">文档图片尺寸调整</div>
+            </div>
+        </div>
+
+        <!-- 格式转换面板 -->
+        <div class="panel" id="panelConvert">
+            <div class="panel-title">🔄 选择目标格式</div>
+            <div class="format-grid" id="formatGrid"></div>
+        </div>
+
+        <!-- 字体格式修改面板 -->
+        <div class="panel" id="panelFormat">
+            <div class="panel-title">📝 公文排版</div>
+            <p style="font-size:13px;color:var(--gray-500);line-height:1.6;">
+                将自动识别文档中的大标题、各级标题、主送机关、发文字号、落款等元素，
+                按 GB/T 9704-2012 标准进行排版。
+            </p>
+            <div style="margin-top:12px;background:var(--warning-light);padding:10px 14px;border-radius:8px;font-size:12px;color:var(--warning);">
+                ⚠️ 请确保文件已有基本格式（有编号、有分段），仅支持 .docx 文件
+            </div>
+        </div>
+
+        <!-- 图片尺寸面板 -->
+        <div class="panel" id="panelResize">
+            <div class="panel-title">🖼️ 图片尺寸设置</div>
+            <div class="size-inputs">
+                <div class="size-field">
+                    <label>宽度 (mm)</label>
+                    <input type="number" id="imgWidth" placeholder="如 120" min="1" max="156" step="1">
+                    <div class="hint">最大 156mm</div>
+                </div>
+                <div class="size-field">
+                    <label>高度 (mm)</label>
+                    <input type="number" id="imgHeight" placeholder="留空自动" min="1" max="225" step="1">
+                    <div class="hint">最大 225mm</div>
+                </div>
+            </div>
+            <div class="size-mode">
+                <button class="mode-btn active" data-mode="fit">按比例缩放</button>
+                <button class="mode-btn" data-mode="exact">精确尺寸</button>
+                <button class="mode-btn" data-mode="max">仅限制最大</button>
+            </div>
+            <div id="imageCountInfo" style="margin-top:12px;font-size:12px;color:var(--gray-500);"></div>
+        </div>
+
+        <!-- 执行按钮 -->
+        <button class="action-btn" id="actionBtn" disabled>开始处理</button>
+
+        <!-- 加载状态 -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div class="loading-text" id="loadingText">正在处理中...</div>
+        </div>
+
+        <!-- 结果 -->
+        <div class="result" id="result">
+            <div class="result-success">
+                <div class="result-icon">✅</div>
+                <div class="result-title" id="resultTitle">处理完成</div>
+                <div class="result-desc" id="resultDesc"></div>
+                <div class="confidence-list" id="confidenceList"></div>
+            </div>
+            <div class="result-actions">
+                <a class="btn-download" id="downloadBtn" href="#">📥 下载文件</a>
+                <button class="btn-reset" id="resetBtn">🔄 处理新文件</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 错误提示 -->
+    <div class="error-toast" id="errorToast"></div>
+
+    <div class="footer">
+        公文格式助手 · 本地处理 · 文件不会上传到外部服务器
+    </div>
+
+    <script>
+    // ═══════════════════════════════════════════════
+    // 全局状态
+    // ═══════════════════════════════════════════════
+    const state = {
+        fileId: null,
+        fileName: null,
+        fileExt: null,
+        selectedOption: null,
+        selectedFormat: null,
+        imageMode: 'fit',
+    };
+
+    // ═══════════════════════════════════════════════
+    // DOM 元素
+    // ═══════════════════════════════════════════════
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => document.querySelectorAll(sel);
+
+    const dropZone = $('#dropZone');
+    const fileInput = $('#fileInput');
+    const fileInfo = $('#fileInfo');
+    const options = $('#options');
+    const actionBtn = $('#actionBtn');
+    const loading = $('#loading');
+    const result = $('#result');
+    const errorToast = $('#errorToast');
+
+    // ═══════════════════════════════════════════════
+    // 拖放处理
+    // ═══════════════════════════════════════════════
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            uploadFile(files[0]);
+        }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            uploadFile(e.target.files[0]);
+        }
+    });
+
+    // ═══════════════════════════════════════════════
+    // 文件上传
+    // ═══════════════════════════════════════════════
+    async function uploadFile(file) {
+        const ext = file.name.split('.').pop().toLowerCase();
+        const allowedExts = ['docx','doc','pdf','pptx','ppt','xlsx','xls','odt','ods','odp','rtf','txt','csv','html'];
+
+        if (!allowedExts.includes(ext)) {
+            showError('不支持的文件格式');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const resp = await fetch('/api/upload', { method: 'POST', body: formData });
+            const data = await resp.json();
+
+            if (data.success) {
+                state.fileId = data.file_id;
+                state.fileName = data.filename;
+                state.fileExt = data.ext;
+
+                // 更新 UI
+                const iconMap = {
+                    docx: '📄', doc: '📄', pdf: '📕', pptx: '📊', ppt: '📊',
+                    xlsx: '📗', xls: '📗', odt: '📄', rtf: '📄', txt: '📝',
+                    html: '🌐', csv: '📗', ods: '📗', odp: '📊'
+                };
+
+                $('#fileIcon').textContent = iconMap[ext] || '📄';
+                $('#fileName').textContent = file.name;
+                $('#fileMeta').textContent = `${ext.toUpperCase()} · ${formatSize(data.size)}`;
+                fileInfo.classList.add('visible');
+                dropZone.classList.add('has-file');
+
+                options.classList.add('visible');
+                resetSelection();
+            } else {
+                showError(data.error || '上传失败');
+            }
+        } catch (err) {
+            showError('上传失败: ' + err.message);
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    // 移除文件
+    // ═══════════════════════════════════════════════
+    $('#fileRemove').addEventListener('click', () => {
+        state.fileId = null;
+        state.fileName = null;
+        state.fileExt = null;
+        fileInfo.classList.remove('visible');
+        dropZone.classList.remove('has-file');
+        options.classList.remove('visible');
+        resetSelection();
+        fileInput.value = '';
+    });
+
+    // ═══════════════════════════════════════════════
+    // 功能选项选择
+    // ═══════════════════════════════════════════════
+    $$('.option-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const option = card.dataset.option;
+            selectOption(option);
+        });
+    });
+
+    function selectOption(option) {
+        state.selectedOption = option;
+
+        // 更新选项卡片状态
+        $$('.option-card').forEach(c => c.classList.remove('selected'));
+        $(`[data-option="${option}"]`).classList.add('selected');
+
+        // 隐藏所有面板
+        $$('.panel').forEach(p => p.classList.remove('visible'));
+
+        // 显示对应面板
+        if (option === 'convert') {
+            $('#panelConvert').classList.add('visible');
+            loadFormatOptions();
+        } else if (option === 'format') {
+            $('#panelFormat').classList.add('visible');
+            // 仅 docx 支持格式修改
+            if (state.fileExt && !['docx', 'doc'].includes(state.fileExt)) {
+                showError('字体格式修改仅支持 Word 文档');
+                actionBtn.classList.remove('visible');
+                return;
+            }
+            actionBtn.classList.add('visible');
+            actionBtn.disabled = false;
+            actionBtn.textContent = '开始排版';
+        } else if (option === 'resize') {
+            $('#panelResize').classList.add('visible');
+            if (state.fileExt && !['docx', 'doc'].includes(state.fileExt)) {
+                showError('图片尺寸统一仅支持 Word 文档');
+                actionBtn.classList.remove('visible');
+                return;
+            }
+            loadImageInfo();
+            actionBtn.classList.add('visible');
+            actionBtn.disabled = false;
+            actionBtn.textContent = '统一图片尺寸';
+        }
+
+        // 格式转换需要先选格式才能执行
+        if (option === 'convert') {
+            if (state.selectedFormat) {
+                actionBtn.classList.add('visible');
+                actionBtn.disabled = false;
+            } else {
+                actionBtn.classList.remove('visible');
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    // 格式转换选项
+    // ═══════════════════════════════════════════════
+    async function loadFormatOptions() {
+        if (!state.fileExt) return;
+
+        try {
+            const resp = await fetch(`/api/conversion-options/${state.fileExt}`);
+            const data = await resp.json();
+
+            const grid = $('#formatGrid');
+            grid.innerHTML = '';
+
+            if (!data.libreoffice_available) {
+                grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--error);font-size:13px;">⚠️ 服务器未安装 LibreOffice，格式转换不可用</div>';
+                actionBtn.classList.remove('visible');
+                return;
+            }
+
+            data.options.forEach(fmt => {
+                const btn = document.createElement('button');
+                btn.className = 'format-btn';
+                btn.dataset.format = fmt;
+                btn.innerHTML = `<span class="ext">.${fmt}</span>`;
+                if (fmt === state.selectedFormat) btn.classList.add('active');
+
+                btn.addEventListener('click', () => {
+                    $$('.format-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    state.selectedFormat = fmt;
+                    actionBtn.classList.add('visible');
+                    actionBtn.disabled = false;
+                    actionBtn.textContent = `转换为 .${fmt}`;
+                });
+
+                grid.appendChild(btn);
+            });
+
+            if (data.options.length === 0) {
+                grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--gray-500);font-size:13px;">该格式无可转换选项</div>';
+            }
+        } catch (err) {
+            showError('加载格式选项失败');
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    // 图片尺寸模式
+    // ═══════════════════════════════════════════════
+    $$('.mode-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            $$('.mode-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            state.imageMode = btn.dataset.mode;
+        });
+    });
+
+    async function loadImageInfo() {
+        if (!state.fileId) return;
+        try {
+            const resp = await fetch('/api/images-info', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file_id: state.fileId })
+            });
+            const data = await resp.json();
+            if (data.success && data.count > 0) {
+                $('#imageCountInfo').textContent = `📊 检测到 ${data.count} 张图片`;
+            } else if (data.success) {
+                $('#imageCountInfo').textContent = '📊 未检测到图片';
+            }
+        } catch (err) {
+            // 静默忽略
+        }
+    }
+
+    // ═══════════════════════════════════════════════
+    // 执行操作
+    // ═══════════════════════════════════════════════
+    actionBtn.addEventListener('click', async () => {
+        if (!state.fileId || !state.selectedOption) return;
+
+        // 图片尺寸验证
+        if (state.selectedOption === 'resize') {
+            const w = parseFloat($('#imgWidth').value);
+            const h = parseFloat($('#imgHeight').value);
+            const mode = state.imageMode;
+
+            if (mode === 'exact' && (!w || !h)) {
+                showError('精确尺寸模式需要填写宽度和高度');
+                return;
+            }
+            if (mode === 'fit' && !w) {
+                showError('请填写目标宽度');
+                return;
+            }
+            if (w && (w > 156 || w <= 0)) {
+                showError('宽度需在 1-156mm 范围内');
+                return;
+            }
+            if (h && (h > 225 || h <= 0)) {
+                showError('高度需在 1-225mm 范围内');
+                return;
+            }
+        }
+
+        // 显示加载
+        options.classList.remove('visible');
+        $$('.panel').forEach(p => p.classList.remove('visible'));
+        actionBtn.classList.remove('visible');
+        loading.classList.add('visible');
+        result.classList.remove('visible');
+
+        const loadingTexts = {
+            convert: '正在转换格式...',
+            format: '正在排版...',
+            resize: '正在处理图片...',
+        };
+        $('#loadingText').textContent = loadingTexts[state.selectedOption] || '正在处理中...';
+
+        try {
+            let resp;
+
+            if (state.selectedOption === 'convert') {
+                resp = await fetch('/api/convert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: state.fileId,
+                        target_format: state.selectedFormat
+                    })
+                });
+            } else if (state.selectedOption === 'format') {
+                resp = await fetch('/api/format', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_id: state.fileId })
+                });
+            } else if (state.selectedOption === 'resize') {
+                resp = await fetch('/api/resize-images', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        file_id: state.fileId,
+                        target_width: $('#imgWidth').value || null,
+                        target_height: $('#imgHeight').value || null,
+                        mode: state.imageMode
+                    })
+                });
+            }
+
+            const data = await resp.json();
+            loading.classList.remove('visible');
+
+            if (data.success) {
+                showResult(data);
+            } else {
+                showError(data.error || '处理失败');
+                // 恢复选项显示
+                options.classList.add('visible');
+                selectOption(state.selectedOption);
+            }
+        } catch (err) {
+            loading.classList.remove('visible');
+            showError('处理失败: ' + err.message);
+            options.classList.add('visible');
+            selectOption(state.selectedOption);
+        }
+    });
+
+    // ═══════════════════════════════════════════════
+    // 显示结果
+    // ═══════════════════════════════════════════════
+    function showResult(data) {
+        result.classList.add('visible');
+        options.classList.remove('visible');
+        $$('.panel').forEach(p => p.classList.remove('visible'));
+        fileInfo.classList.remove('visible');
+
+        const outputId = data.output_file_id;
+
+        if (state.selectedOption === 'convert') {
+            $('#resultTitle').textContent = '格式转换完成';
+            $('#resultDesc').textContent = `已转换为 .${state.selectedFormat} 格式`;
+        } else if (state.selectedOption === 'format') {
+            $('#resultTitle').textContent = '公文排版完成';
+            $('#resultDesc').textContent = '已按 GB/T 9704-2012 标准排版';
+
+            // 显示置信度标记
+            const confList = $('#confidenceList');
+            confList.innerHTML = '';
+            if (data.confidence_marks && data.confidence_marks.length > 0) {
+                const heading = document.createElement('div');
+                heading.style.cssText = 'font-size:13px;font-weight:600;margin-bottom:8px;color:var(--gray-600);';
+                heading.textContent = '📋 识别结果';
+                confList.appendChild(heading);
+
+                data.confidence_marks.forEach(mark => {
+                    const item = document.createElement('div');
+                    item.className = `confidence-item confidence-${mark.confidence}`;
+                    item.textContent = `${mark.emoji} ${mark.element_type} - ${mark.level}`;
+                    confList.appendChild(item);
+                });
+            }
+        } else if (state.selectedOption === 'resize') {
+            $('#resultTitle').textContent = '图片尺寸统一完成';
+            $('#resultDesc').textContent = data.processed_count > 0
+                ? `已处理 ${data.processed_count} 张图片`
+                : '文档中未发现需要调整的图片';
+        }
+
+        // 下载按钮
+        const downloadBtn = $('#downloadBtn');
+        downloadBtn.href = `/api/download/${outputId}`;
+        downloadBtn.download = data.filename || 'output';
+
+        // 保持在框内 - 恢复拖放区域为有文件状态
+        dropZone.classList.add('has-file');
+    }
+
+    // ═══════════════════════════════════════════════
+    // 重置
+    // ═══════════════════════════════════════════════
+    $('#resetBtn').addEventListener('click', () => {
+        resetAll();
+    });
+
+    function resetSelection() {
+        state.selectedOption = null;
+        state.selectedFormat = null;
+        $$('.option-card').forEach(c => c.classList.remove('selected'));
+        $$('.panel').forEach(p => p.classList.remove('visible'));
+        actionBtn.classList.remove('visible');
+        result.classList.remove('visible');
+    }
+
+    function resetAll() {
+        state.fileId = null;
+        state.fileName = null;
+        state.fileExt = null;
+        state.selectedOption = null;
+        state.selectedFormat = null;
+        state.imageMode = 'fit';
+
+        fileInfo.classList.remove('visible');
+        dropZone.classList.remove('has-file');
+        options.classList.remove('visible');
+        $$('.panel').forEach(p => p.classList.remove('visible'));
+        actionBtn.classList.remove('visible');
+        result.classList.remove('visible');
+        loading.classList.remove('visible');
+        $('#confidenceList').innerHTML = '';
+        $('#imageCountInfo').textContent = '';
+        $('#imgWidth').value = '';
+        $('#imgHeight').value = '';
+        fileInput.value = '';
+
+        $$('.option-card').forEach(c => c.classList.remove('selected'));
+        $$('.format-btn').forEach(b => b.classList.remove('active'));
+        $$('.mode-btn').forEach(b => b.classList.remove('active'));
+        $$('.mode-btn')[0].classList.add('active');
+    }
+
+    // ═══════════════════════════════════════════════
+    // 工具函数
+    // ═══════════════════════════════════════════════
+    function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function showError(msg) {
+        errorToast.textContent = '❌ ' + msg;
+        errorToast.classList.add('visible');
+        setTimeout(() => errorToast.classList.remove('visible'), 4000);
+    }
+
+    // ═══════════════════════════════════════════════
+    // 移动端触摸优化
+    // ═══════════════════════════════════════════════
+    dropZone.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        fileInput.click();
+    });
+    </script>
+</body>
+</html>
