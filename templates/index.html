@@ -726,7 +726,7 @@
     <div class="error-toast" id="errorToast"></div>
 
     <div class="footer">
-        公文格式助手 · 本地处理 · 文件不会上传到外部服务器
+        公文格式助手 · 文件处理完毕即删除 · 隐私安全
     </div>
 
     <script>
@@ -912,6 +912,13 @@
     async function loadFormatOptions() {
         if (!state.fileExt) return;
 
+        // 纯 Python 可用的转换路径
+        const fallbackPaths = {
+            'docx': ['html', 'txt', 'pdf'],
+            'txt': ['html'],
+            'html': ['txt'],
+        };
+
         try {
             const resp = await fetch(`/api/conversion-options/${state.fileExt}`);
             const data = await resp.json();
@@ -919,11 +926,12 @@
             const grid = $('#formatGrid');
             grid.innerHTML = '';
 
-            if (!data.libreoffice_available) {
-                grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--error);font-size:13px;">⚠️ 服务器未安装 LibreOffice，格式转换不可用</div>';
-                actionBtn.classList.remove('visible');
+            if (data.options.length === 0) {
+                grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--gray-500);font-size:13px;">该格式无可转换选项</div>';
                 return;
             }
+
+            const fallbackForExt = fallbackPaths[state.fileExt] || [];
 
             data.options.forEach(fmt => {
                 const btn = document.createElement('button');
@@ -932,7 +940,18 @@
                 btn.innerHTML = `<span class="ext">.${fmt}</span>`;
                 if (fmt === state.selectedFormat) btn.classList.add('active');
 
+                // 标记需要 LibreOffice 的格式
+                const needsLO = !data.libreoffice_available && !fallbackForExt.includes(fmt);
+                if (needsLO) {
+                    btn.style.opacity = '0.4';
+                    btn.title = '需要 LibreOffice 支持';
+                }
+
                 btn.addEventListener('click', () => {
+                    if (needsLO) {
+                        showError(`.${fmt} 格式转换需要服务器安装 LibreOffice，暂不可用`);
+                        return;
+                    }
                     $$('.format-btn').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     state.selectedFormat = fmt;
@@ -944,8 +963,13 @@
                 grid.appendChild(btn);
             });
 
-            if (data.options.length === 0) {
-                grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--gray-500);font-size:13px;">该格式无可转换选项</div>';
+            // LibreOffice 不可用时显示提示
+            if (!data.libreoffice_available) {
+                const hint = document.createElement('div');
+                hint.style.cssText = 'grid-column:1/-1;font-size:12px;color:var(--warning);margin-top:8px;';
+                hint.textContent = '⚠️ 部分格式需要 LibreOffice 支持（灰色标记），当前可用：' +
+                    (fallbackForExt.length > 0 ? fallbackForExt.map(f => `.${f}`).join(', ') : '无');
+                grid.appendChild(hint);
             }
         } catch (err) {
             showError('加载格式选项失败');
@@ -1185,11 +1209,18 @@
     }
 
     // ═══════════════════════════════════════════════
-    // 移动端触摸优化
+    // 移动端触摸优化（不阻止页面滚动）
     // ═══════════════════════════════════════════════
+    let touchStartTime = 0;
+    dropZone.addEventListener('touchstart', () => {
+        touchStartTime = Date.now();
+    }, { passive: true });
     dropZone.addEventListener('touchend', (e) => {
-        e.preventDefault();
-        fileInput.click();
+        // 只在快速点击（<300ms）时触发文件选择，避免干扰滚动
+        if (Date.now() - touchStartTime < 300) {
+            e.preventDefault();
+            fileInput.click();
+        }
     });
     </script>
 </body>

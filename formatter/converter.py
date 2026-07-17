@@ -4,8 +4,8 @@
 """
 
 import os
+import html
 import subprocess
-import shutil
 import logging
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,15 @@ OUTPUT_FILTERS = {
     "html": "HTML (StarWriter)",
     "txt": "Text",
     "csv": "Text - txt - csv (StarCalc)",
+}
+
+# 纯 Python 降级方案支持的转换路径
+FALLBACK_PATHS = {
+    ('docx', 'html'): True,
+    ('docx', 'txt'): True,
+    ('docx', 'pdf'): True,   # 尝试 docx2pdf
+    ('txt', 'html'): True,
+    ('html', 'txt'): True,
 }
 
 
@@ -98,7 +107,7 @@ def convert_file(input_path, output_format, output_dir=None):
     # 使用 LibreOffice
     soffice = find_libreoffice()
     if not soffice:
-        return {"success": False, "error": "未找到 LibreOffice，无法进行此格式转换。请安装 LibreOffice 以获得完整转换支持。"}
+        return {"success": False, "error": "此格式转换需要 LibreOffice 支持，服务器暂未安装。支持的纯 Python 转换：docx→html, docx→txt, txt→html, html→txt"}
 
     try:
         cmd = [
@@ -139,38 +148,32 @@ def convert_file(input_path, output_format, output_dir=None):
 def _try_fallback_convert(input_path, output_format, output_dir):
     """
     纯 Python 降级转换方案。
-    支持: docx→pdf, docx→html, docx→txt, html→txt, txt→html
+    支持: docx→html, docx→txt, docx→pdf(需docx2pdf), html→txt, txt→html
     """
     ext = os.path.splitext(input_path)[1].lstrip('.').lower()
     base_name = os.path.splitext(os.path.basename(input_path))[0]
     output_path = os.path.join(output_dir, f"{base_name}.{output_format}")
 
+    # 检查是否有降级路径
+    if (ext, output_format) not in FALLBACK_PATHS:
+        return None
+
     try:
-        # docx → html
         if ext == 'docx' and output_format == 'html':
             return _docx_to_html(input_path, output_path)
 
-        # docx → txt
         if ext == 'docx' and output_format == 'txt':
             return _docx_to_txt(input_path, output_path)
 
-        # docx → pdf (尝试使用 docx2pdf)
         if ext == 'docx' and output_format == 'pdf':
             return _docx_to_pdf(input_path, output_path)
 
-        # doc → docx (尝试使用 python-docx 不支持 .doc，跳过)
-        if ext == 'doc' and output_format == 'docx':
-            return None  # 需要 LibreOffice
-
-        # txt → html
         if ext == 'txt' and output_format == 'html':
             return _txt_to_html(input_path, output_path)
 
-        # html → txt
         if ext == 'html' and output_format == 'txt':
             return _html_to_txt(input_path, output_path)
 
-        # 其他格式需要 LibreOffice
         return None
 
     except Exception as e:
@@ -179,14 +182,16 @@ def _try_fallback_convert(input_path, output_format, output_dir):
 
 
 def _docx_to_html(input_path, output_path):
-    """docx 转 html"""
+    """docx 转 html（带 HTML 转义防止 XSS）"""
     from docx import Document
     doc = Document(input_path)
 
     html_parts = [
         '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">',
-        '<style>body{font-family:"SimSun",serif;max-width:800px;margin:0 auto;padding:20px;}',
-        'p{margin:0.5em 0;line-height:1.8;}</style></head><body>'
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+        '<style>body{font-family:"SimSun","Noto Sans SC",sans-serif;max-width:800px;margin:0 auto;padding:20px;}',
+        'p{margin:0.5em 0;line-height:1.8;} table{border-collapse:collapse;width:100%;}',
+        'td,th{border:1px solid #ccc;padding:6px 8px;}</style></head><body>'
     ]
 
     for para in doc.paragraphs:
@@ -199,10 +204,12 @@ def _docx_to_html(input_path, output_path):
         align = para.alignment
         if align == 1:  # CENTER
             style += 'text-align:center;'
+        elif align == 2:  # RIGHT
+            style += 'text-align:right;'
 
         runs_html = ''
         for run in para.runs:
-            rtext = run.text
+            rtext = html.escape(run.text)
             if run.bold:
                 rtext = f'<b>{rtext}</b>'
             if run.italic:
@@ -217,6 +224,16 @@ def _docx_to_html(input_path, output_path):
 
         attr = f' style="{style}"' if style else ''
         html_parts.append(f'<p{attr}>{runs_html}</p>')
+
+    # 表格
+    for table in doc.tables:
+        html_parts.append('<table>')
+        for row in table.rows:
+            html_parts.append('<tr>')
+            for cell in row.cells:
+                html_parts.append(f'<td>{html.escape(cell.text)}</td>')
+            html_parts.append('</tr>')
+        html_parts.append('</table>')
 
     html_parts.append('</body></html>')
 
@@ -234,58 +251,28 @@ def _docx_to_txt(input_path, output_path):
     with open(output_path, 'w', encoding='utf-8') as f:
         for para in doc.paragraphs:
             f.write(para.text + '\n')
+        # 也提取表格文本
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [cell.text for cell in row.cells]
+                f.write('\t'.join(cells) + '\n')
 
     return {"success": True, "output_path": output_path}
 
 
 def _docx_to_pdf(input_path, output_path):
-    """docx 转 pdf，尝试多种方案"""
-    # 方案1: docx2pdf
+    """docx 转 pdf，尝试 docx2pdf（需要安装）"""
     try:
         import docx2pdf
         docx2pdf.convert(input_path, output_path)
-        if os.path.exists(output_path):
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
             return {"success": True, "output_path": output_path}
     except ImportError:
-        pass
-    except Exception:
-        pass
+        logger.info("docx2pdf 未安装，跳过 PDF 转换")
+    except Exception as e:
+        logger.warning(f"docx2pdf 转换失败: {e}")
 
-    # 方案2: 使用 reportlab 生成简单 PDF
-    try:
-        from docx import Document
-        from reportlab.lib.pagesizes import A4
-        from reportlab.pdfgen import canvas as pdf_canvas
-        from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.ttfonts import TTFont
-
-        doc = Document(input_path)
-        c = pdf_canvas.Canvas(output_path, pagesize=A4)
-        width, height = A4
-        y = height - 60
-
-        for para in doc.paragraphs:
-            text = para.text
-            if not text.strip():
-                y -= 16
-                continue
-
-            # 简单分页
-            if y < 60:
-                c.showPage()
-                y = height - 60
-
-            c.drawString(40, y, text[:100])
-            y -= 20
-
-        c.save()
-        if os.path.exists(output_path):
-            return {"success": True, "output_path": output_path}
-    except ImportError:
-        pass
-    except Exception:
-        pass
-
+    # 不使用 reportlab（中文字体问题太多），回退到 LibreOffice
     return None
 
 
@@ -294,15 +281,17 @@ def _txt_to_html(input_path, output_path):
     with open(input_path, 'r', encoding='utf-8') as f:
         text = f.read()
 
-    html = (
-        '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
-        '<style>body{font-family:sans-serif;max-width:800px;margin:0 auto;padding:20px;'
-        'white-space:pre-wrap;line-height:1.8;}</style></head><body>'
-        f'{text}</body></html>'
+    escaped = html.escape(text)
+    html_content = (
+        '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+        '<style>body{font-family:"Noto Sans SC",sans-serif;max-width:800px;margin:0 auto;padding:20px;'
+        'white-space:pre-wrap;line-height:1.8;}</style></head><body>',
+        f'{escaped}</body></html>'
     )
 
     with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(html)
+        f.write(''.join(html_content))
 
     return {"success": True, "output_path": output_path}
 
@@ -311,9 +300,16 @@ def _html_to_txt(input_path, output_path):
     """html 转纯文本"""
     import re
     with open(input_path, 'r', encoding='utf-8') as f:
-        html = f.read()
+        content = f.read()
 
-    text = re.sub(r'<[^>]+>', '', html)
+    # 移除 script 和 style 内容
+    text = re.sub(r'<script[^>]*>.*?</script>', '', content, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    # 移除所有 HTML 标签
+    text = re.sub(r'<[^>]+>', '', text)
+    # 处理 HTML 实体
+    text = html.unescape(text)
+    # 压缩多余空行
     text = re.sub(r'\n{3,}', '\n\n', text)
 
     with open(output_path, 'w', encoding='utf-8') as f:

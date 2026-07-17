@@ -5,6 +5,7 @@
 import os
 import uuid
 import time
+import json
 import logging
 from flask import Flask, request, jsonify, send_file, render_template
 from werkzeug.utils import secure_filename
@@ -28,11 +29,10 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB 上传限制
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, 'uploads')
 TEMP_DIR = os.path.join(BASE_DIR, 'temp')
+META_DIR = os.path.join(BASE_DIR, 'meta')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)
-
-# 文件存储: file_id -> {path, original_name, ext}
-file_store = {}
+os.makedirs(META_DIR, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {
     'docx', 'doc', 'pdf', 'pptx', 'ppt', 'xlsx', 'xls',
@@ -47,6 +47,54 @@ def allowed_file(filename):
 
 def get_file_ext(filename):
     return filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+
+
+# ══════════════════════════════════════════════
+# 文件存储（文件系统版，支持多 worker 和重启持久化）
+# ══════════════════════════════════════════════
+def save_meta(file_id, data):
+    """保存文件元数据到磁盘"""
+    path = os.path.join(META_DIR, f'{file_id}.json')
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False)
+
+
+def load_meta(file_id):
+    """从磁盘加载文件元数据"""
+    path = os.path.join(META_DIR, f'{file_id}.json')
+    if os.path.exists(path):
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return None
+
+
+def delete_meta(file_id):
+    """删除文件元数据"""
+    path = os.path.join(META_DIR, f'{file_id}.json')
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def cleanup_expired_files():
+    """清理超过1小时的临时文件"""
+    now = time.time()
+    try:
+        for fname in os.listdir(META_DIR):
+            if not fname.endswith('.json'):
+                continue
+            file_id = fname[:-5]
+            meta = load_meta(file_id)
+            if meta and now - meta.get('upload_time', 0) > 3600:
+                # 删除文件
+                file_path = meta.get('path', '')
+                if file_path and os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                    except Exception:
+                        pass
+                delete_meta(file_id)
+    except Exception:
+        pass
 
 
 # ══════════════════════════════════════════════
@@ -74,20 +122,21 @@ def upload_file():
 
     file_id = str(uuid.uuid4())[:8]
     ext = get_file_ext(file.filename)
-    # 确保保存的文件名包含正确扩展名
-    safe_name = secure_filename(file.filename)
+    # 使用 file_id 作为文件名前缀，避免同名文件冲突
+    safe_name = f"{file_id}_{secure_filename(file.filename)}"
     if not safe_name or not safe_name.endswith(f'.{ext}'):
-        safe_name = f"upload_{file_id}.{ext}"
+        safe_name = f"{file_id}_upload.{ext}"
     save_path = os.path.join(UPLOAD_DIR, safe_name)
 
     try:
         file.save(save_path)
-        file_store[file_id] = {
+        meta = {
             "path": save_path,
             "original_name": file.filename,
             "ext": ext,
             "upload_time": time.time()
         }
+        save_meta(file_id, meta)
         logger.info(f"文件上传成功: {file.filename} -> {file_id}")
 
         return jsonify({
@@ -111,15 +160,15 @@ def api_convert():
     file_id = data.get('file_id')
     target_format = data.get('target_format', '').lower()
 
-    if not file_id or file_id not in file_store:
+    meta = load_meta(file_id)
+    if not file_id or not meta:
         return jsonify({"success": False, "error": "文件不存在，请重新上传"}), 400
 
     if not target_format:
         return jsonify({"success": False, "error": "请指定目标格式"}), 400
 
-    source = file_store[file_id]
-    input_path = source['path']
-    source_ext = source['ext']
+    input_path = meta['path']
+    source_ext = meta['ext']
 
     # 如果源格式和目标格式相同
     if source_ext == target_format:
@@ -133,12 +182,13 @@ def api_convert():
         result = convert_file(input_path, target_format, TEMP_DIR)
         if result['success']:
             output_id = str(uuid.uuid4())[:8]
-            file_store[output_id] = {
+            output_meta = {
                 "path": result['output_path'],
                 "original_name": os.path.basename(result['output_path']),
                 "ext": target_format,
                 "upload_time": time.time()
             }
+            save_meta(output_id, output_meta)
             return jsonify({
                 "success": True,
                 "output_file_id": output_id,
@@ -159,14 +209,14 @@ def api_format():
     data = request.json or request.form
     file_id = data.get('file_id')
 
-    if not file_id or file_id not in file_store:
+    meta = load_meta(file_id)
+    if not file_id or not meta:
         return jsonify({"success": False, "error": "文件不存在，请重新上传"}), 400
 
-    source = file_store[file_id]
-    if source['ext'] not in ('docx', 'doc'):
+    if meta['ext'] not in ('docx', 'doc'):
         return jsonify({"success": False, "error": "格式修改仅支持 Word 文档（.docx/.doc）"}), 400
 
-    input_path = source['path']
+    input_path = meta['path']
     output_name = f"formatted_{os.path.basename(input_path)}"
     output_path = os.path.join(TEMP_DIR, output_name)
 
@@ -175,12 +225,13 @@ def api_format():
         result = engine.process(input_path, output_path)
 
         output_id = str(uuid.uuid4())[:8]
-        file_store[output_id] = {
+        output_meta = {
             "path": result['output_path'],
             "original_name": output_name,
             "ext": "docx",
             "upload_time": time.time()
         }
+        save_meta(output_id, output_meta)
 
         return jsonify({
             "success": True,
@@ -204,11 +255,11 @@ def api_resize_images():
     target_height = data.get('target_height')  # mm
     mode = data.get('mode', 'fit')  # fit / exact / max
 
-    if not file_id or file_id not in file_store:
+    meta = load_meta(file_id)
+    if not file_id or not meta:
         return jsonify({"success": False, "error": "文件不存在，请重新上传"}), 400
 
-    source = file_store[file_id]
-    if source['ext'] not in ('docx', 'doc'):
+    if meta['ext'] not in ('docx', 'doc'):
         return jsonify({"success": False, "error": "图片尺寸统一仅支持 Word 文档（.docx/.doc）"}), 400
 
     # 参数处理
@@ -226,7 +277,7 @@ def api_resize_images():
     if height_mm and (height_mm > A4_CONTENT_HEIGHT_MM or height_mm <= 0):
         return jsonify({"success": False, "error": f"高度需在 1-{A4_CONTENT_HEIGHT_MM}mm 范围内"}), 400
 
-    input_path = source['path']
+    input_path = meta['path']
     output_name = f"resized_{os.path.basename(input_path)}"
     output_path = os.path.join(TEMP_DIR, output_name)
 
@@ -235,12 +286,13 @@ def api_resize_images():
 
         if result['success']:
             output_id = str(uuid.uuid4())[:8]
-            file_store[output_id] = {
+            output_meta = {
                 "path": output_path,
                 "original_name": output_name,
                 "ext": "docx",
                 "upload_time": time.time()
             }
+            save_meta(output_id, output_meta)
             return jsonify({
                 "success": True,
                 "output_file_id": output_id,
@@ -262,14 +314,14 @@ def api_images_info():
     data = request.json or request.form
     file_id = data.get('file_id')
 
-    if not file_id or file_id not in file_store:
+    meta = load_meta(file_id)
+    if not file_id or not meta:
         return jsonify({"success": False, "error": "文件不存在"}), 400
 
-    source = file_store[file_id]
-    if source['ext'] not in ('docx', 'doc'):
+    if meta['ext'] not in ('docx', 'doc'):
         return jsonify({"success": False, "error": "仅支持 Word 文档"}), 400
 
-    images = get_document_images_info(source['path'])
+    images = get_document_images_info(meta['path'])
     return jsonify({"success": True, "images": images, "count": len(images)})
 
 
@@ -278,14 +330,14 @@ def api_images_info():
 # ══════════════════════════════════════════════
 @app.route('/api/download/<file_id>')
 def download_file(file_id):
-    if file_id not in file_store:
+    meta = load_meta(file_id)
+    if not meta:
         return jsonify({"error": "文件不存在"}), 404
 
-    source = file_store[file_id]
     return send_file(
-        source['path'],
+        meta['path'],
         as_attachment=True,
-        download_name=source['original_name']
+        download_name=meta['original_name']
     )
 
 
@@ -323,28 +375,26 @@ def api_status():
     return jsonify({
         "status": "running",
         "libreoffice": find_libreoffice() is not None,
-        "version": "1.0.0"
+        "version": "2.0.0"
     })
 
 
 # ══════════════════════════════════════════════
-# 清理过期文件
+# 清理过期文件（每次请求概率触发，避免高频遍历）
 # ══════════════════════════════════════════════
+_cleanup_counter = 0
+
 @app.before_request
-def cleanup_old_files():
-    """每次请求前清理超过1小时的临时文件"""
-    now = time.time()
-    expired = [fid for fid, info in file_store.items() if now - info['upload_time'] > 3600]
-    for fid in expired:
-        try:
-            os.remove(file_store[fid]['path'])
-        except Exception:
-            pass
-        del file_store[fid]
+def maybe_cleanup():
+    global _cleanup_counter
+    _cleanup_counter += 1
+    # 每 50 次请求清理一次
+    if _cleanup_counter % 50 == 0:
+        cleanup_expired_files()
 
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5800))
     logger.info(f"公文格式助手启动: http://localhost:{port}")
-    logger.info(f"LibreOffice: {'已安装' if find_libreoffice() else '未安装（格式转换不可用）'}")
+    logger.info(f"LibreOffice: {'已安装' if find_libreoffice() else '未安装（格式转换部分不可用）'}")
     app.run(host='0.0.0.0', port=port, debug=False)

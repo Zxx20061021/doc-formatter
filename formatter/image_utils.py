@@ -79,16 +79,32 @@ def resize_images_in_docx(input_path, output_path, target_width_mm=None, target_
         doc = Document(input_path)
         processed = 0
 
+        # 处理段落中的图片
         for para in doc.paragraphs:
             for run in para.runs:
                 for drawing in run._element.findall(qn('w:drawing')):
                     processed += _process_drawing(drawing, target_width_mm, target_height_mm, mode)
 
-        # 也检查表格中的图片
+        # 处理表格中的图片
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for para in cell.paragraphs:
+                        for run in para.runs:
+                            for drawing in run._element.findall(qn('w:drawing')):
+                                processed += _process_drawing(drawing, target_width_mm, target_height_mm, mode)
+
+        # 处理页眉页脚中的图片
+        for section in doc.sections:
+            for header_part in [section.header, section.first_page_header, section.even_page_header]:
+                if header_part and header_part.is_linked_to_previous is False:
+                    for para in header_part.paragraphs:
+                        for run in para.runs:
+                            for drawing in run._element.findall(qn('w:drawing')):
+                                processed += _process_drawing(drawing, target_width_mm, target_height_mm, mode)
+            for footer_part in [section.footer, section.first_page_footer, section.even_page_footer]:
+                if footer_part and footer_part.is_linked_to_previous is False:
+                    for para in footer_part.paragraphs:
                         for run in para.runs:
                             for drawing in run._element.findall(qn('w:drawing')):
                                 processed += _process_drawing(drawing, target_width_mm, target_height_mm, mode)
@@ -102,15 +118,9 @@ def resize_images_in_docx(input_path, output_path, target_width_mm=None, target_
 
 
 def _process_drawing(drawing, target_width_mm, target_height_mm, mode):
-    """处理单个 drawing 元素"""
-    # 查找 extent 元素
+    """处理单个 drawing 元素（支持 inline 和 anchor 类型）"""
+    # 查找 extent 元素（inline 和 anchor 都有）
     extent = drawing.find('.//' + qn('wp:extent'))
-    if extent is None:
-        # 尝试 inline 形状
-        inline = drawing.find(qn('wp:inline'))
-        if inline is not None:
-            extent = inline.find(qn('wp:extent'))
-
     if extent is None:
         return 0
 
@@ -153,7 +163,7 @@ def _process_drawing(drawing, target_width_mm, target_height_mm, mode):
             new_height_mm = DEFAULT_MAX_HEIGHT
             new_width_mm = new_height_mm * aspect
 
-    # 更新尺寸
+    # 更新 wp:extent 尺寸
     extent.set('cx', str(mm_to_emu(new_width_mm)))
     extent.set('cy', str(mm_to_emu(new_height_mm)))
 
@@ -167,32 +177,54 @@ def _process_drawing(drawing, target_width_mm, target_height_mm, mode):
 
 def get_document_images_info(input_path):
     """
-    获取文档中所有图片的信息
+    获取文档中所有图片的信息（包括段落、表格中的图片）
 
     Returns:
-        list: [{"index": int, "width_mm": float, "height_mm": float}]
+        list: [{"index": int, "width_mm": float, "height_mm": float, "location": str}]
     """
     try:
         doc = Document(input_path)
         images = []
         idx = 0
 
+        # 段落中的图片
         for para in doc.paragraphs:
             for run in para.runs:
                 for drawing in run._element.findall(qn('w:drawing')):
-                    extent = drawing.find('.//' + qn('wp:extent'))
-                    if extent is not None:
-                        cx = int(extent.get('cx', '0'))
-                        cy = int(extent.get('cy', '0'))
-                        if cx > 0 and cy > 0:
-                            images.append({
-                                "index": idx,
-                                "width_mm": round(emu_to_mm(cx), 1),
-                                "height_mm": round(emu_to_mm(cy), 1),
-                            })
-                            idx += 1
+                    info = _get_drawing_info(drawing, idx, "段落")
+                    if info:
+                        images.append(info)
+                        idx += 1
+
+        # 表格中的图片
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        for run in para.runs:
+                            for drawing in run._element.findall(qn('w:drawing')):
+                                info = _get_drawing_info(drawing, idx, "表格")
+                                if info:
+                                    images.append(info)
+                                    idx += 1
 
         return images
     except Exception as e:
         logger.exception("获取图片信息异常")
         return []
+
+
+def _get_drawing_info(drawing, idx, location):
+    """获取单个 drawing 的尺寸信息"""
+    extent = drawing.find('.//' + qn('wp:extent'))
+    if extent is not None:
+        cx = int(extent.get('cx', '0'))
+        cy = int(extent.get('cy', '0'))
+        if cx > 0 and cy > 0:
+            return {
+                "index": idx,
+                "width_mm": round(emu_to_mm(cx), 1),
+                "height_mm": round(emu_to_mm(cy), 1),
+                "location": location,
+            }
+    return None

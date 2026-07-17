@@ -2,8 +2,13 @@ __pycache__/
 *.pyc
 uploads/
 temp/
+meta/
 .env
 *.egg-info/
 dist/
 build/
 .DS_Store
+.venv/
+*.log
+start.sh
+server.log
