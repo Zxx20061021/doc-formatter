@@ -671,7 +671,7 @@
                 按 GB/T 9704-2012 标准进行排版。
             </p>
             <div style="margin-top:12px;background:var(--warning-light);padding:10px 14px;border-radius:8px;font-size:12px;color:var(--warning);">
-                ⚠️ 请确保文件已有基本格式（有编号、有分段），仅支持 .docx 文件
+                ⚠️ 请确保文件已有基本格式（有编号、有分段），支持 .docx 和 .doc 文件（.doc 将自动转换为 .docx 后处理）
             </div>
         </div>
 
@@ -873,7 +873,7 @@
             loadFormatOptions();
         } else if (option === 'format') {
             $('#panelFormat').classList.add('visible');
-            // 仅 docx 支持格式修改
+            // 仅 docx/doc 支持格式修改
             if (state.fileExt && !['docx', 'doc'].includes(state.fileExt)) {
                 showError('字体格式修改仅支持 Word 文档');
                 actionBtn.classList.remove('visible');
@@ -881,7 +881,7 @@
             }
             actionBtn.classList.add('visible');
             actionBtn.disabled = false;
-            actionBtn.textContent = '开始排版';
+            actionBtn.textContent = state.fileExt === 'doc' ? '自动转.docx并排版' : '开始排版';
         } else if (option === 'resize') {
             $('#panelResize').classList.add('visible');
             if (state.fileExt && !['docx', 'doc'].includes(state.fileExt)) {
@@ -915,6 +915,7 @@
         // 纯 Python 可用的转换路径
         const fallbackPaths = {
             'docx': ['html', 'txt', 'pdf'],
+            'doc': ['docx', 'html', 'txt', 'pdf'],
             'txt': ['html'],
             'html': ['txt'],
         };

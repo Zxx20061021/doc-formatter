@@ -2,9 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 最小系统依赖
+# 系统依赖 + 精简版 LibreOffice（仅 Writer 核心，无 GUI）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg-dev zlib1g-dev libpng-dev \
+    libreoffice-writer-nogui \
+    fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 

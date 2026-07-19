@@ -217,6 +217,14 @@ def api_format():
         return jsonify({"success": False, "error": "格式修改仅支持 Word 文档（.docx/.doc）"}), 400
 
     input_path = meta['path']
+
+    # .doc 文件先自动转换为 .docx（python-docx 只支持 .docx）
+    if meta['ext'] == 'doc':
+        conv_result = convert_file(input_path, 'docx', TEMP_DIR)
+        if not conv_result['success']:
+            return jsonify({"success": False, "error": f".doc 文件需先转换为 .docx：{conv_result['error']}"}), 500
+        input_path = conv_result['output_path']
+
     output_name = f"formatted_{os.path.basename(input_path)}"
     output_path = os.path.join(TEMP_DIR, output_name)
 
@@ -262,6 +270,15 @@ def api_resize_images():
     if meta['ext'] not in ('docx', 'doc'):
         return jsonify({"success": False, "error": "图片尺寸统一仅支持 Word 文档（.docx/.doc）"}), 400
 
+    input_path = meta['path']
+
+    # .doc 文件先自动转换为 .docx（python-docx 只支持 .docx）
+    if meta['ext'] == 'doc':
+        conv_result = convert_file(input_path, 'docx', TEMP_DIR)
+        if not conv_result['success']:
+            return jsonify({"success": False, "error": f".doc 文件需先转换为 .docx：{conv_result['error']}"}), 500
+        input_path = conv_result['output_path']
+
     # 参数处理
     width_mm = float(target_width) if target_width else None
     height_mm = float(target_height) if target_height else None
@@ -277,7 +294,6 @@ def api_resize_images():
     if height_mm and (height_mm > A4_CONTENT_HEIGHT_MM or height_mm <= 0):
         return jsonify({"success": False, "error": f"高度需在 1-{A4_CONTENT_HEIGHT_MM}mm 范围内"}), 400
 
-    input_path = meta['path']
     output_name = f"resized_{os.path.basename(input_path)}"
     output_path = os.path.join(TEMP_DIR, output_name)
 
@@ -321,7 +337,14 @@ def api_images_info():
     if meta['ext'] not in ('docx', 'doc'):
         return jsonify({"success": False, "error": "仅支持 Word 文档"}), 400
 
-    images = get_document_images_info(meta['path'])
+    input_path = meta['path']
+    if meta['ext'] == 'doc':
+        conv_result = convert_file(input_path, 'docx', TEMP_DIR)
+        if not conv_result['success']:
+            return jsonify({"success": False, "error": f".doc 文件需先转换为 .docx：{conv_result['error']}"}), 500
+        input_path = conv_result['output_path']
+
+    images = get_document_images_info(input_path)
     return jsonify({"success": True, "images": images, "count": len(images)})
 
 
