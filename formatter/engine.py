@@ -51,6 +51,9 @@ class FormatEngine:
         doc = Document(input_path)
         self.confidence_marks = []
 
+        # 步骤0: 修复 LibreOffice 转换产生的 python-docx 不兼容对齐值
+        self._fix_incompatible_alignments(doc)
+
         # 步骤1: 页面格式统一
         self._set_page_format(doc)
 
@@ -693,10 +696,36 @@ class FormatEngine:
     # ══════════════════════════════════════════════
     # 辅助方法
     # ══════════════════════════════════════════════
+    def _fix_incompatible_alignments(self, doc):
+        """修复 LibreOffice 转换产生的 python-docx 不兼容对齐值
+        LibreOffice 使用 'start'/'end' 对齐，python-docx 不识别会报错
+        """
+        alignment_map = {
+            'start': 'left',
+            'end': 'right',
+        }
+        for para in doc.paragraphs:
+            pPr = para._element.find(qn('w:pPr'))
+            if pPr is not None:
+                jc = pPr.find(qn('w:jc'))
+                if jc is not None:
+                    val = jc.get(qn('w:val'))
+                    if val in alignment_map:
+                        jc.set(qn('w:val'), alignment_map[val])
+
     def _is_centered(self, para):
         """判断段落是否居中"""
-        return para.alignment == WD_ALIGN_PARAGRAPH.CENTER or \
-               (para.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER)
+        try:
+            return para.alignment == WD_ALIGN_PARAGRAPH.CENTER or \
+                   (para.paragraph_format.alignment == WD_ALIGN_PARAGRAPH.CENTER)
+        except (ValueError, KeyError):
+            # LibreOffice 转换可能产生不兼容的对齐值，回退到检查 XML
+            pPr = para._element.find(qn('w:pPr'))
+            if pPr is not None:
+                jc = pPr.find(qn('w:jc'))
+                if jc is not None:
+                    return jc.get(qn('w:val')) in ('center', 'Center')
+            return False
 
     def _is_bold(self, para):
         """判断段落是否加粗"""
